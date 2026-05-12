@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Home() {
   const musicLinks = [
     { label: "Spotify", href: "https://open.spotify.com" },
@@ -25,6 +27,9 @@ export default function Home() {
           <a className="button button-ghost" href="#contact">
             Book / Connect
           </a>
+          <Link className="button button-accent" href="/dashboard">
+            Login
+          </Link>
         </div>
       </section>
 
