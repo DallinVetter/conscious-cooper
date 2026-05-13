@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { ContentManager } from "./_components/content-manager";
+import { ProductManager } from "./_components/content-manager";
 
 export const metadata: Metadata = {
   title: "Dashboard | Conscious Cooper",
-  description: "Internal content manager for Conscious Cooper.",
+  description: "Internal product manager for Conscious Cooper.",
 };
 
 export default function DashboardPage() {
-  return <ContentManager />;
+  return <ProductManager />;
 }

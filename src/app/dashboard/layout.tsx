@@ -12,9 +12,9 @@ export default function DashboardLayout({
         <div className={styles.brandBlock}>
           <p className={styles.eyebrow}>Internal admin</p>
           <div>
-            <h1 className={styles.title}>Conscious Cooper Content Manager</h1>
+            <h1 className={styles.title}>Conscious Cooper Product Manager</h1>
             <p className={styles.subtitle}>
-              Browse releases, inspect a selection, and add new items for the
+              Browse products, inspect a selection, and add new items for the
               brand site.
             </p>
           </div>

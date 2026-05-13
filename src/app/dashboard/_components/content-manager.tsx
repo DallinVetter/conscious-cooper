@@ -1,86 +1,88 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import type { Product, ProductCategory, ProductStatus } from "@/lib/products";
 import styles from "../dashboard.module.css";
 
-type ContentType = "Release" | "Promo" | "Show" | "Press";
-type ContentStatus = "Draft" | "Ready" | "Scheduled" | "Published";
-
-type ContentItem = {
-  id: string;
+type DraftProduct = {
   title: string;
-  type: ContentType;
-  status: ContentStatus;
+  category: ProductCategory;
+  status: ProductStatus;
   description: string;
-  link: string;
+  price: string;
   imageUrl: string;
-  accent: string;
-  updatedAt: string;
+  externalUrl: string;
 };
 
-type DraftItem = {
-  title: string;
-  type: ContentType;
-  status: ContentStatus;
-  description: string;
-  link: string;
-  imageUrl: string;
-};
-
-const seedItems: ContentItem[] = [
-  {
-    id: "night-run",
-    title: "Night Run",
-    type: "Release",
-    status: "Published",
-    description:
-      "Lead single for the next Conscious Cooper rollout, built for clean visuals and a focused launch.",
-    link: "https://consciouscooper.com/releases/night-run",
-    imageUrl: "Cover image pending",
-    accent: "#c4552d",
-    updatedAt: "2 hours ago",
-  },
-  {
-    id: "press-kit",
-    title: "Press Kit Refresh",
-    type: "Press",
-    status: "Ready",
-    description:
-      "Updated artist bio, short copy, and contact block for booking and media inquiries.",
-    link: "https://consciouscooper.com/press-kit",
-    imageUrl: "Press image pending",
-    accent: "#7a5a45",
-    updatedAt: "Yesterday",
-  },
-  {
-    id: "fall-set",
-    title: "Fall Set Promo",
-    type: "Promo",
-    status: "Scheduled",
-    description:
-      "Promo tile for a seasonal campaign with strong CTA placement and a lightweight landing path.",
-    link: "https://consciouscooper.com/promo/fall-set",
-    imageUrl: "Promo art pending",
-    accent: "#4f6472",
-    updatedAt: "3 days ago",
-  },
-];
-
-const emptyDraft: DraftItem = {
+const emptyDraft: DraftProduct = {
   title: "",
-  type: "Release",
+  category: "Music",
   status: "Draft",
   description: "",
-  link: "",
+  price: "",
   imageUrl: "",
+  externalUrl: "",
 };
 
-export function ContentManager() {
-  const [items, setItems] = useState(seedItems);
-  const [selectedId, setSelectedId] = useState(seedItems[0].id);
+export function ProductManager() {
+  const [items, setItems] = useState<Product[]>([]);
+  const [selectedId, setSelectedId] = useState("");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState(emptyDraft);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [statusError, setStatusError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadProducts() {
+      setIsLoading(true);
+      setLoadError("");
+
+      try {
+        const response = await fetch("/api/products", {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to load products (${response.status}).`);
+        }
+
+        const data = (await response.json()) as { products?: Product[] };
+        const products = Array.isArray(data.products) ? data.products : [];
+
+        setItems(products);
+        setSelectedId((current) => {
+          if (current && products.some((product) => product.id === current)) {
+            return current;
+          }
+
+          return products[0]?.id ?? "";
+        });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load products.",
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    void loadProducts();
+
+    return () => controller.abort();
+  }, []);
 
   const filteredItems = items.filter((item) => {
     const search = query.trim().toLowerCase();
@@ -91,43 +93,130 @@ export function ContentManager() {
 
     return (
       item.title.toLowerCase().includes(search) ||
-      item.type.toLowerCase().includes(search) ||
+      item.category.toLowerCase().includes(search) ||
       item.status.toLowerCase().includes(search) ||
-      item.description.toLowerCase().includes(search)
+      item.description.toLowerCase().includes(search) ||
+      item.externalUrl.toLowerCase().includes(search)
     );
   });
 
   const selectedItem = items.find((item) => item.id === selectedId) ?? items[0];
 
-  function handleDraftChange<K extends keyof DraftItem>(
+  function handleDraftChange<K extends keyof DraftProduct>(
     key: K,
-    value: DraftItem[K],
+    value: DraftProduct[K],
   ) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  function handleCreate(event: FormEvent<HTMLFormElement>) {
+  async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmitError("");
 
-    const newItem: ContentItem = {
-      id: `item-${Date.now()}`,
-      title: draft.title.trim(),
-      type: draft.type,
-      status: draft.status,
-      description: draft.description.trim(),
-      link: draft.link.trim(),
-      imageUrl: draft.imageUrl.trim() || "Cover image pending",
-      accent: "#c4552d",
-      updatedAt: "Just now",
-    };
+    const title = draft.title.trim();
 
-    if (!newItem.title) {
+    if (!title) {
+      setSubmitError("Title is required.");
       return;
     }
 
-    setItems((current) => [newItem, ...current]);
-    setSelectedId(newItem.id);
-    setDraft(emptyDraft);
+    const priceInput = draft.price.trim();
+    if (priceInput !== "") {
+      const parsedPrice = Number(priceInput);
+
+      if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+        setSubmitError("Price must be a valid non-negative number.");
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch("/api/products", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title,
+          category: draft.category,
+          status: draft.status,
+          description: draft.description,
+          price: priceInput === "" ? null : Number(priceInput),
+          imageUrl: draft.imageUrl,
+          externalUrl: draft.externalUrl,
+        }),
+      });
+
+      const data = (await response.json()) as
+        | { product: Product }
+        | { error?: string };
+
+      if (!response.ok || !("product" in data)) {
+        throw new Error(
+          "error" in data && data.error
+            ? data.error
+            : "Failed to create product.",
+        );
+      }
+
+      setItems((current) => [data.product, ...current]);
+      setSelectedId(data.product.id);
+      setLoadError("");
+      setStatusError("");
+      setDraft(emptyDraft);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "Failed to create product.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handlePublishProduct() {
+    if (!selectedItem) {
+      return;
+    }
+
+    setStatusError("");
+    setIsPublishing(true);
+
+    try {
+      const response = await fetch(`/api/products/${selectedItem.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: "Published" }),
+      });
+
+      const data = (await response.json()) as
+        | { product: Product }
+        | { error?: string };
+
+      if (!response.ok || !("product" in data)) {
+        throw new Error(
+          "error" in data && data.error
+            ? data.error
+            : "Failed to publish product.",
+        );
+      }
+
+      setItems((current) =>
+        current.map((product) =>
+          product.id === data.product.id ? data.product : product,
+        ),
+      );
+      setSelectedId(data.product.id);
+    } catch (error) {
+      setStatusError(
+        error instanceof Error ? error.message : "Failed to publish product.",
+      );
+    } finally {
+      setIsPublishing(false);
+    }
   }
 
   return (
@@ -136,24 +225,28 @@ export function ContentManager() {
         <div className={styles.sectionHeader}>
           <div>
             <p className={styles.sectionLabel}>Library</p>
-            <h2 className={styles.sectionTitle}>Content items</h2>
+            <h2 className={styles.sectionTitle}>Products</h2>
           </div>
-          <span className={styles.sectionMeta}>{filteredItems.length} items</span>
+          <span className={styles.sectionMeta}>{filteredItems.length} products</span>
         </div>
 
         <label className={styles.searchWrap}>
-          <span className={styles.srOnly}>Search items</span>
+          <span className={styles.srOnly}>Search products</span>
           <input
             className={styles.searchInput}
             type="search"
-            placeholder="Search by title, type, or status"
+            placeholder="Search by title, category, status, or URL"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
 
         <div className={styles.itemGrid}>
-          {filteredItems.length > 0 ? (
+          {isLoading ? (
+            <p className={styles.emptyLibrary}>Loading products...</p>
+          ) : loadError ? (
+            <p className={styles.emptyLibrary}>{loadError}</p>
+          ) : filteredItems.length > 0 ? (
             filteredItems.map((item) => (
               <button
                 key={item.id}
@@ -164,7 +257,7 @@ export function ContentManager() {
                 onClick={() => setSelectedId(item.id)}
               >
                 <div className={styles.cardTop}>
-                  <span className={styles.itemType}>{item.type}</span>
+                  <span className={styles.itemType}>{item.category}</span>
                   <span className={styles.itemStatus}>{item.status}</span>
                 </div>
                 <h3>{item.title}</h3>
@@ -173,8 +266,8 @@ export function ContentManager() {
             ))
           ) : (
             <p className={styles.emptyLibrary}>
-              No items match that search. Try a different keyword or create a
-              new content item.
+              No products match that search. Try a different keyword or create a
+              new product.
             </p>
           )}
         </div>
@@ -185,11 +278,15 @@ export function ContentManager() {
           <div className={styles.sectionHeader}>
             <div>
               <p className={styles.sectionLabel}>Selection</p>
-              <h2 className={styles.sectionTitle}>Item inspector</h2>
+              <h2 className={styles.sectionTitle}>Product inspector</h2>
             </div>
           </div>
 
-          {selectedItem ? (
+          {isLoading ? (
+            <p className={styles.emptyState}>Loading products...</p>
+          ) : loadError ? (
+            <p className={styles.emptyState}>{loadError}</p>
+          ) : selectedItem ? (
             <>
               <div
                 className={styles.detailPreview}
@@ -200,7 +297,7 @@ export function ContentManager() {
 
               <div className={styles.detailStack}>
                 <div>
-                  <p className={styles.detailKicker}>{selectedItem.type}</p>
+                  <p className={styles.detailKicker}>{selectedItem.category}</p>
                   <h3 className={styles.detailTitle}>{selectedItem.title}</h3>
                 </div>
 
@@ -214,12 +311,31 @@ export function ContentManager() {
                     <dd>{selectedItem.updatedAt}</dd>
                   </div>
                   <div className={styles.detailRow}>
+                    <dt>Price</dt>
+                    <dd>{selectedItem.price === null ? "N/A" : `$${selectedItem.price.toFixed(2)}`}</dd>
+                  </div>
+                  <div className={styles.detailRow}>
                     <dt>Link</dt>
-                    <dd>{selectedItem.link}</dd>
+                    <dd>{selectedItem.externalUrl}</dd>
                   </div>
                 </dl>
 
                 <p className={styles.detailCopy}>{selectedItem.description}</p>
+                {selectedItem.status !== "Published" ? (
+                  <div className={styles.buttonRow}>
+                    <button
+                      className={styles.primaryButton}
+                      type="button"
+                      onClick={handlePublishProduct}
+                      disabled={isPublishing}
+                    >
+                      {isPublishing ? "Publishing..." : "Publish Product"}
+                    </button>
+                  </div>
+                ) : null}
+                {statusError ? (
+                  <p className={styles.emptyState}>{statusError}</p>
+                ) : null}
               </div>
             </>
           ) : (
@@ -233,7 +349,7 @@ export function ContentManager() {
           <div className={styles.sectionHeader}>
             <div>
               <p className={styles.sectionLabel}>Create</p>
-              <h2 className={styles.sectionTitle}>New content item</h2>
+              <h2 className={styles.sectionTitle}>New product</h2>
             </div>
           </div>
 
@@ -253,18 +369,23 @@ export function ContentManager() {
 
             <div className={styles.twoUp}>
               <label className={styles.field}>
-                <span>Type</span>
+                <span>Category</span>
                 <select
                   className={styles.input}
-                  value={draft.type}
+                  value={draft.category}
                   onChange={(event) =>
-                    handleDraftChange("type", event.target.value as ContentType)
+                    handleDraftChange(
+                      "category",
+                      event.target.value as ProductCategory,
+                    )
                   }
                 >
-                  <option>Release</option>
-                  <option>Promo</option>
-                  <option>Show</option>
-                  <option>Press</option>
+                  <option>Apparel</option>
+                  <option>Accessories</option>
+                  <option>Music</option>
+                  <option>Prints</option>
+                  <option>Digital</option>
+                  <option>Other</option>
                 </select>
               </label>
 
@@ -276,24 +397,37 @@ export function ContentManager() {
                   onChange={(event) =>
                     handleDraftChange(
                       "status",
-                      event.target.value as ContentStatus,
+                      event.target.value as ProductStatus,
                     )
                   }
                 >
                   <option>Draft</option>
-                  <option>Ready</option>
-                  <option>Scheduled</option>
                   <option>Published</option>
+                  <option>Sold Out</option>
+                  <option>Coming Soon</option>
                 </select>
               </label>
             </div>
 
             <label className={styles.field}>
-              <span>Link</span>
+              <span>Price</span>
               <input
                 className={styles.input}
-                value={draft.link}
-                onChange={(event) => handleDraftChange("link", event.target.value)}
+                inputMode="decimal"
+                value={draft.price}
+                onChange={(event) => handleDraftChange("price", event.target.value)}
+                placeholder="42"
+              />
+            </label>
+
+            <label className={styles.field}>
+              <span>External URL</span>
+              <input
+                className={styles.input}
+                value={draft.externalUrl}
+                onChange={(event) =>
+                  handleDraftChange("externalUrl", event.target.value)
+                }
                 placeholder="https://consciouscooper.com/..."
               />
             </label>
@@ -325,16 +459,18 @@ export function ContentManager() {
 
             <div className={styles.buttonRow}>
               <button className={styles.primaryButton} type="submit">
-                Create item
+                Create product
               </button>
               <button
                 className={styles.secondaryButton}
                 type="button"
                 onClick={() => setDraft(emptyDraft)}
+                disabled={isSubmitting}
               >
                 Reset form
               </button>
             </div>
+            {submitError ? <p className={styles.emptyState}>{submitError}</p> : null}
           </form>
         </section>
       </aside>
