@@ -1,10 +1,29 @@
 import { isProductStatus, updateProductStatus } from "@/lib/products";
+import { getAdminUser, getCurrentUser } from "@/lib/supabase-auth";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return Response.json(
+        { error: "Authentication required" },
+        { status: 401 },
+      );
+    }
+
+    const adminUser = await getAdminUser();
+
+    if (!adminUser) {
+      return Response.json(
+        { error: "Admin access required" },
+        { status: 403 },
+      );
+    }
+
     const { id } = await params;
     const payload = (await request.json()) as { status?: unknown };
 

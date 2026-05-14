@@ -5,6 +5,7 @@ import {
   isProductStatus,
   listProducts,
 } from "@/lib/products";
+import { getAdminUser, getCurrentUser } from "@/lib/supabase-auth";
 
 function normalizeString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -37,6 +38,24 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return Response.json(
+        { error: "Authentication required" },
+        { status: 401 },
+      );
+    }
+
+    const adminUser = await getAdminUser();
+
+    if (!adminUser) {
+      return Response.json(
+        { error: "Admin access required" },
+        { status: 403 },
+      );
+    }
+
     const payload = (await request.json()) as Partial<CreateProductBody> & {
       price?: unknown;
     };
